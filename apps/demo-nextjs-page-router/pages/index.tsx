@@ -1,6 +1,5 @@
 import * as fal from '@fal-ai/serverless-client';
 import { useMemo, useState } from 'react';
-
 // @snippet:start(client.config)
 fal.config({
   proxyUrl: '/api/fal/proxy', // the built-int nextjs proxy
@@ -68,36 +67,48 @@ export function Index() {
 
   const generateImage = async () => {
     reset();
-    // @snippet:start("client.queue.subscribe")
     setLoading(true);
-    const start = Date.now();
-    try {
-      const result: Result = await fal.subscribe('fal-ai/lora', {
-        input: {
-          prompt,
-          model_name: 'stabilityai/stable-diffusion-xl-base-1.0',
-          image_size: 'square_hd',
-        },
-        pollInterval: 3000, // Default is 1000 (every 1s)
-        logs: true,
-        onQueueUpdate(update) {
-          setElapsedTime(Date.now() - start);
-          if (
-            update.status === 'IN_PROGRESS' ||
-            update.status === 'COMPLETED'
-          ) {
-            setLogs((update.logs || []).map((log) => log.message));
+    const maxImages = 50; // Example limit for the number of images to generate
+    let imagesGenerated = 0;
+
+    const generateLoop = async () => {
+      if (imagesGenerated >= maxImages) {
+        setLoading(false);
+        return; // Stop the loop when the condition is met
+      }
+
+      const start = Date.now();
+      try {
+        const result: Result = await fal.subscribe(
+          'fal-ai/fast-lightning-sdxl',
+          {
+            input: {
+              prompt,
+              num_inference_steps: '1',
+            },
+            logs: true,
+            onQueueUpdate: (update) => {
+              setElapsedTime(Date.now() - start);
+              if (
+                update.status === 'IN_PROGRESS' ||
+                update.status === 'COMPLETED'
+              ) {
+                setLogs((update.logs || []).map((log) => log.message));
+              }
+            },
           }
-        },
-      });
-      setResult(result);
-    } catch (error: any) {
-      setError(error);
-    } finally {
-      setLoading(false);
-      setElapsedTime(Date.now() - start);
-    }
-    // @snippet:end
+        );
+        setResult(result);
+        imagesGenerated += 1; // Increment the counter after each successful generation
+      } catch (error: any) {
+        setError(error);
+      } finally {
+        setElapsedTime(Date.now() - start);
+        generateLoop(); // Recursively call the function to continue the loop
+      }
+    };
+
+    await generateLoop();
   };
   return (
     <div className="min-h-screen dark:bg-gray-900 bg-gray-100">
